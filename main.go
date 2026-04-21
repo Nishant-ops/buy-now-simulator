@@ -1,72 +1,82 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"log"
 	"net/http"
-	"sync"
+	"os"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
-type Inventory struct {
-	mu         sync.Mutex
-	TotalStock int64
-	SoldStock  int64
-}
+var rdb *redis.Client
 
-var inventory = Inventory{
-	TotalStock: 100000, // example stock for the flash sale
-	SoldStock:  0,
-}
+var decrIfPositive = redis.NewScript(`
+	local stock = tonumber(redis.call('GET', KEYS[1]))
+	if stock <= 0 then
+		return -1
+	end
+	return redis.call('DECR', KEYS[1])
+`)
+
+const stockKey = "stock:flash-sale-item-001"
 
 func main() {
-	// Standard library router
-	http.HandleFunc("/buy", buyHandler)
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379"
+	}
+	opt, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Fatalf("Invalid REDIS_URL: %v", err)
+	}
+	rdb = redis.NewClient(opt)
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+	defer rdb.Close()
+	log.Println("Connected to Redis")
+
+	r := gin.Default()
+	r.POST("/buy", buyHandler)
+	r.GET("/stock", stockHandler)
 
 	fmt.Println("Server starting on :8080...")
-	fmt.Println("Total Flash Sale Stock:", inventory.TotalStock)
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := r.Run(":8080"); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
 
-// buyHandler simulates the Flipkart "Buy Now" button logic
-func buyHandler(w http.ResponseWriter, r *http.Request) {
-	// Typically this would be a POST request as it's an action that changes state
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed, use POST", http.StatusMethodNotAllowed)
+func buyHandler(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+
+	result, err := decrIfPositive.Run(ctx, rdb, []string{stockKey}).Int()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-
-	// Lock the inventory to prevent race conditions during concurrent flash sale requests
-	inventory.mu.Lock()
-	defer inventory.mu.Unlock()
-	time.Sleep(20 * time.Millisecond)
-	// 1. Check if we still have stock
-	if inventory.SoldStock >= inventory.TotalStock {
-		// Sold out!
-		// fmt.Println("Product is sold out!")
-		w.WriteHeader(http.StatusConflict) // 409 Conflict
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":  "failed",
-			"message": "Product is sold out!",
-		})
+	if result == -1 {
+		c.JSON(http.StatusConflict, gin.H{"status": "failed", "message": "Product is sold out!"})
 		return
 	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "success",
+		"message":   "Purchase successful!",
+		"remaining": result,
+	})
+}
 
-	// 2. Process purchase
-	inventory.SoldStock++
-	// inventory.TotalStock--
-	// Simulate some work like DB updates, user validation, queueing the order
-	// time.Sleep(10 * time.Millisecond)
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":   "success",
-		"message":  "Purchase successful!",
-		"order_id": fmt.Sprintf("ORDID%04d", inventory.SoldStock),
+func stockHandler(c *gin.Context) {
+	val, err := rdb.Get(c.Request.Context(), stockKey).Int64()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"available": val,
 	})
 }

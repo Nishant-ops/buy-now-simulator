@@ -1,0 +1,17 @@
+app = 'buy-now-redis'
+primary_region = 'bom'
+
+[build]
+  image = 'redis:7-alpine'
+
+[mounts]
+  source = 'redis_data'
+  destination = '/data'
+
+[processes]
+  app = 'redis-server --appendonly yes --save 60 1 --dir /data'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 2

@@ -1,0 +1,11 @@
+app = 'buy-now-kafka'
+primary_region = 'bom'
+
+[mounts]
+  source = 'redpanda_data'
+  destination = '/var/lib/redpanda/data'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1

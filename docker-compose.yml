@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: buy-now-db
+    environment:
+      POSTGRES_USER: buynow
+      POSTGRES_PASSWORD: buynow
+      POSTGRES_DB: buynow
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c wal_level=minimal
+      -c max_wal_senders=0
+      -c synchronous_commit=off
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buynow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://buynow:buynow@db:5432/buynow?pool_max_conns=10
+      GIN_MODE: release
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

@@ -1,0 +1,4 @@
+I think so in fly.io you did not mention the Dockerfile. Are you expecting fly.io to figure it out all out? I think so it can figure out, but yeah.
+1. Second thing is, where is the Dockerfile for DB? I want to also have a database in fly.io. The only way I can send a request from 10 machines to the DB, right? That's not there. Let me know, how do I do that?
+2. Maximum pool connections should be not 10, but is it for connecting it? Yeah, for connecting it, it's 10. Yeah, that makes sense, 10 into 10 is 100 connections, which is okay.
+3. You didn't mention Docker 5, and also I think so in the http service you can search the web. You have mentioned minimum machine running 10. I think so, why would he have minimum machine running 10 when it should be maximum, or is it, like, at max? Search the web and just let's go from there.
